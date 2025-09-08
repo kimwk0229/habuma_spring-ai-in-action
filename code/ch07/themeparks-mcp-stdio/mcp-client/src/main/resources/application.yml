@@ -1,0 +1,14 @@
+spring:
+  application:
+    name: mcp-client
+
+  ai:
+    mcp:
+      client:
+        stdio:
+          connections:
+            filesystem:
+              command: ${JAVA_HOME}/bin/java
+              args:
+              - '-jar'
+              - '${MCP_SERVER_PATH}/build/libs/mcp-server-0.0.1-SNAPSHOT.jar'

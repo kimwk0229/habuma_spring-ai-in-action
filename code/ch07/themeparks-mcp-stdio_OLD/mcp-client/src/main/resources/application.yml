@@ -1,0 +1,20 @@
+spring:
+  application:
+    name: mcp-client
+  ai:
+    openai:
+      chat:
+        api-key: ${OPENAI_API_KEY}
+        options:
+          model: gpt-4o-mini
+
+#logging:
+#  level:
+#    org.springframework.ai.mcp.client.transport.StdioClientTransport: off
+#    org.springframework.ai.mcp.spec.DefaultMcpSession: warn
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: info, metrics

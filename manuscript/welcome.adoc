@@ -1,0 +1,19 @@
+= Spring AI in Action
+:chapter: welcome
+
+= Welcome
+
+Thank you for purchasing the MEAP edition of _Spring AI in Action_. I hope you find it to be a valuable resource as you explore the fascinating world of Generative AI. Writing this book has been a rewarding experience, and I trust that you will enjoy working through it as much as I did creating it.
+
+Generative AI is currently a highly prominent topic. It’s difficult to engage with the news, social media, or technical publications without encountering discussions on AI and its impact on our world. While some of the discourse may be exaggerated or overly cautious, there is a wealth of practical applications for Generative AI that lie between these extremes.
+
+In this book, you will learn how to use Spring AI to integrate Large Language Models (LLMs) from providers like OpenAI, Mistral AI, and Anthropic into your Spring applications. You will enable your applications to ask questions on behalf of users, including inquiries about your own documents and APIs. Additionally, you will explore techniques for managing conversational memory in multi-turn interactions. In later chapters, you will discover how to work with multimodal LLMs to generate and interpret images, audio, and other types of content, alongside textual prompts and responses.
+
+Please note that Spring AI is still in its pre-GA stage and continues to evolve. The chapters currently available to you are based on Spring AI version 1.0.0-M1. As Spring AI progresses towards general availability, I will update the book and its examples to reflect the latest milestone releases and the final 1.0.0 version.
+
+Spring AI is an incredibly exciting topic, and I hope you find it as engaging as I do. I encourage you to share your thoughts, questions, and suggestions in the https://livebook.manning.com/forum?product=walls10&page=1[liveBook's Discussion Forum]. Your feedback is invaluable and will greatly assist me as I complete _Spring AI in Action_.
+
+Thank you once again for your interest and for purchasing the MEAP edition!
+
+Best regards,
+— Craig Walls

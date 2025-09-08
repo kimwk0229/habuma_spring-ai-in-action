@@ -1,0 +1,11 @@
+spring:
+  application:
+    name: mcp-client
+
+  ai:
+    mcp:
+      client:
+        sse:
+          connections:
+            themeparks:
+              url: http://localhost:3001

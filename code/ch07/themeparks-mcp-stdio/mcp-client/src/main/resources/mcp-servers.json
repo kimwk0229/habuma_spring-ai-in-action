@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "java",
+      "args": [
+        "-jar",
+        "/Users/habuma/Projects/BookProjects/walls10/code/ch07/themeparks-mcp-stdio/mcp-server/build/libs/mcp-server-0.0.1-SNAPSHOT.jar"
+      ]
+    }
+  }
+}

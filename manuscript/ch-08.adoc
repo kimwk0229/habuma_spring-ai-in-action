@@ -1,0 +1,776 @@
+= Spring AI in Action
+:chapter: 8
+:sectnums:
+:figure-caption: Figure {chapter}
+:listing-caption: Listing {chapter}
+:table-caption: Table {chapter}
+:leveloffset: 1
+:boot_version: 3.4.2
+:spring_version: 6.2.2
+:spring_ai_version: 1.0.0-M6
+:xrefstyle: short
+:bitmap_ext: png
+:sectnumoffset: 7
+
+= Generating with voice and pictures
+
+This chapter covers
+
+* Transcribing audio to text
+* Generating audio from text
+* Images as prompt context
+* Generating images
+
+Throughout history, we humans have developed several different ways of communicating with each other.
+Perhaps the oldest form of human communication is voice-based, where people speak and listen to each other.
+Text-based communication has taken many forms, from early hieroglyphs and the origin of the alphabet by the Phoenicians to letters, emails, and SMS text messages.
+And sometimes an image can, indeed, paint a thousand words, meaning that works of art and photographs make for a powerful form of communication that text and voice cannot compete with.
+
+Thus far, our project has focused on text-based interaction with the Board Game Buddy application.
+The questions asked about games are sent in as text and the answers received are just more text.
+Since it will be humans who will ultimately be interacting with Board Game Buddy, it makes sense to offer more human-style communication with the application.
+
+In this chapter, we're going to leverage Spring AI to break away from text-based interaction, enabling speech-based and image-based communication in our application, both as input and output.
+Let's start by seeing how Spring AI can enable us to add voice to an application.
+
+== Working with voice
+
+Voice interaction with computers have long lived only in the realm of science fiction, from the computer on the Enterprise on Star Trek to Iron Man's Jarvis.
+But in recent years, voice interactions have become more mainstream as assistants such as Siri and Alexa have enabled hands-free, voice-driven user experiences.
+Voice offers a rich and natural means of interaction that is often more efficient and clear than typing, tapping, or clicking on a traditional user interface.
+After all, voice itself is one of the oldest forms of communication, predating computers by many millenia.
+
+Being able to "listen" is an incredible ability that generative AI can activate in your Spring applications.
+By "listening" to an audio file and producing a textual representation of what it heard, your application can more naturally interact with users.
+And in reverse, generating spoken audio from text enables your application to speak with your users just as naturally they speak to your application.
+
+Let's see how to add speech capabilities to the Board Game Buddy application, starting by adding the ability to answer questions that were asked with voice.
+
+[[ex_transcribingSpeech]]
+=== Transcribing speech
+
+Transcription is the process by which text is produced from spoken audio.
+Spring AI supports transcription through the `TranscriptionModel` interface, for which there are currently only two implementations: `OpenAiAudioTranscriptionModel` and `AzureOpenAiAudioTranscriptionModel`.
+While this limits you to working with only OpenAI or Azure's OpenAI offering, that works out fine for the Board Game Buddy application, as we've been working with OpenAI all along anyway.
+You won't even need to add any additional dependencies in your build to get started with transcription.
+
+On the other hand, if you've chosen an API other than OpenAI, then you're not entirely out of luck.
+You'll need to add the OpenAI starter dependency to your build as described in chapter 1.
+And you'll need to be sure to specify the OpenAI API Key in your application configuration, which was also covered in chapter 1.
+Then, you'll need to disable auto-configuration for Open AI chat and embedding support so that it doesn't clash with auto-configuration for your chosen API.
+To do that, add the following entries in your application.properties file:
+
+----
+spring.ai.openai.chat.enabled=false
+spring.ai.openai.embedding.enabled=false
+----
+
+These two properties will disable chat and embedding auto-configuration for Open AI, but will leave voice-related auto-configuration enabled.
+
+Now let's add voice capabilities to Board Game Buddy.
+For that you'll create a service bean that implements a custom `VoiceService` interface.
+Create the following `VoiceService` interface in the `com.example.boardgamebuddy` package:
+
+----
+include::../code/ch08/board-game-buddy-1/src/main/java/com/example/boardgamebuddy/VoiceService.java[]
+----
+
+The `VoiceService` interface defines the full voice experience for Board Game Buddy, handling both transcription of voice to text and producing voice audio from text.
+The `transcribe()` method handles the job of transcribing an audio file (such as an MP3 or WAV file) to text.
+It accepts the audio file as a `Resource`, producing a `String` that contains the transcription text.
+Meanwhile, the `textToSpeech()` method flips things around and produces a `Resource`, which is an audio file containing the spoken text from the `String` parameter.
+
+What you need now is an implementation of `VoiceService`.
+Let's first focus on implementing the `transcribe()` method.
+We'll leave the `textToSpeech()` method minimally implemented for now, saving that for the next section.
+Listing <<ex_InitialVoiceService>> shows `OpenAiVoiceService`, the initial implementation of our `VoiceService` interface.
+
+[#ex_InitialVoiceService, reftext={chapter}.{counter:listing}, caption='{listing-caption}.{counter:listing-number} ']
+.Implementing voice transcription.
+----
+include::../code/ch08/board-game-buddy-1/src/main/java/com/example/boardgamebuddy/OpenAiVoiceService.java[tag=initialVoiceService]
+----
+<1> Inject transcription model
+<2> Send text for transcription
+
+As you can see, `OpenAiVoiceService` is annotated with `@Service`, so it will be automatically discovered and created as a bean in the Spring application context.
+When that happens, `OpenAiVoiceService` will be injected with an `OpenAiAudioTranscriptionModel` via the constructor.
+Spring AI's auto-configuration for OpenAI will have created that `OpenAiAudioTranscriptionModel`.
+But if you are using Azure's OpenAI offering, you'll need to inject an `AzureOpenAiAudioTranscriptionModel` instead.
+
+NOTE: That last couple of sentences will no longer be required if https://github.com/spring-projects/spring-ai/issues/1478 is applied.
+
+The transcription takes place in the `transcribe()` method.
+Passing in the given `Resource` to the transcription model's `call()` method and returning the `String` returned from `call()` couldn't be any simpler.
+Under the covers, the audio file carried in the `Resource` is sent to OpenAI's (or Azure OpenAI's) transcription API to do the heavy lifting.
+
+Having implemented the `AudioService` interface, you just need to inject it into `AskController`, as shown in listing <<ex_AskController_injectAudioService>>.
+
+[#ex_AskController_injectAudioService, reftext={chapter}.{counter:listing}, caption='{listing-caption}.{counter:listing-number} ']
+.Injecting AudioService into the AskController.
+----
+include::../code/ch08/board-game-buddy-1/src/main/java/com/example/boardgamebuddy/AskController.java[tag=injectTranscriptionService]
+----
+<1> Inject AudoService
+
+And then put it to work to transcribe audio as the new `audioAsk()` method in listing <<ex_AskController_audioAsk>> shows.
+
+[#ex_AskController_audioAsk, reftext={chapter}.{counter:listing}, caption='{listing-caption}.{counter:listing-number} ']
+.ex_AskController_audioAsk
+----
+include::../code/ch08/board-game-buddy-1/src/main/java/com/example/boardgamebuddy/AskController.java[tag=audioAsk,indent=0]
+----
+<1> Handle /audioAsk
+<2> Receive MultiparFile
+<3> Receive game title
+
+You'll notice that this new `audioAsk()` method is quite similar to the `ask()` method that we've been working with for several chapters.
+But it does different in a few significant ways:
+
+- It handles POST requests for `/audioAsk` instead of `/ask`
+- Instead of receiving a `Question` in the request body, it is given a `MultipartFile` which is the audio file (that presumably contains the question in spoken form).
+- Because it isn't given a `Question`, it also receives the game title as a `String` parameter to establish which game the question pertains to.
+
+Inside of the `audioAsk()` method, a `Resource` is obtained from the `audioBlob` parameter and passed to the `transcribe()` method of the `AudioService`.
+The transcribed text that is returned is then used, along with the title of the game, to create a `Question` object.
+Finally, the `Question` is passed to the `askQuestion()` method of the `BoardGameService` to get the answer, which is then returned as an `Answer` object.
+
+Presumably, some front-end application would record the user asking a question and submit it to the API.
+But since creating such an application is well outside of the scope of this book, you'll need to create an audio file using whatever audio recording tools are at your disposal.
+This includes tools such as Audacityfootnote:[https://www.audacityteam.org/], Windows Voice Recorder, or QuickTime.
+Whatever tool you choose, just be sure that you can save the audio as MP3, MP4, MPEG, MPGA, M4A, WAV, or WEBM, as those are the only audio formats supported by Open AI.
+
+.Ready-made test audio files.
+[NOTE]
+====
+To make things a little easier for you, I've placed a handful of MP3 files in the `test-audio` directory of the Board Game Buddy project for this chapter.
+These files provide audio for asking some questions related to the game Burger Battle, including:
+
+- How many cards are dealt to each player?
+- What is the Graveyard?
+- What is Pickle Plague?
+- Does Burger Force Field protect against Burgerpocalypse?
+
+Feel free to use those audio files or create your own as you test the transcription features added to the project.
+====
+
+With an audio file handy, fire up the application and submit a request to the `/audioAsk` endpoint.
+Let's say that you've created an audio file in which you ask "What is the Graveyard?"
+Using HTTPie, you can submit the audio file and the game title to the `/audioAsk` endpoint like this:
+
+----
+$ http -f POST :8080/audioAsk \
+  audio@'test-audio/what_is_graveyard.mp3;type=audio/mp3' \
+  gameTitle="Burger Battle"
+----
+
+If everything works correct, you'll soon receive a response something like this:
+
+----
+{
+  "answer": "The Graveyard is where destroyed Battle Cards and ingredients
+             are tossed during the game.",
+  "game": "Burger Battle"
+}
+----
+
+Effectively, you have now enabled the Board Game Buddy API to "listen" to a user.
+But listening is only one side of the voice application coin.
+The other side involves enabling the application to produce a voice response.
+Let's see how to use Spring AI to generate speech in the Board Game Buddy API.
+
+=== Generating speech from text
+
+Whereas `OpenAiAudioTranscriptionModel` is the Spring AI component that converts speech to text, `SpeechModel` is the component that converts text to speech.
+You'll use `SpeechModel` to implement the `textToSpeech()` method from `VoiceService` that was left minimally implemented in the previous section.
+To start, inject `SpeechModel` into `OpenAiVoiceService` through its constructor:
+
+----
+include::../code/ch08/board-game-buddy-1/src/main/java/com/example/boardgamebuddy/OpenAiVoiceService.java[tag=withTTS]
+----
+
+Now you can use it to replace the original implementation of `textToSpeech()` with one that produces audio output instead of throwing an exception.
+The following implementation should do the trick:
+
+----
+include::../code/ch08/board-game-buddy-1/src/main/java/com/example/boardgamebuddy/OpenAiVoiceService.java[tag=textToSpeech]
+----
+
+Believe it or not, that's all there is to it!
+The `String` that is passed into the `textToSpeech()` method is passed in to ``SpeechModel``'s `call()` method.
+In return, you get an array of `byte` that are the bytes that make up an audio file (which is MP3 by default).
+Finally, to satisfy the return type of `Resource`, a `ByteArrayResource` is created from the `byte` array and returned from `textToSpeech()`.
+
+Now create a new handler method in `AskController` that puts the new `textToSpeech()` method to work.
+The following `audioAskAudioResponse()` method takes inspiration from the `audioAsk()` method created before, but uses `textToSpeech()` to return audio.
+
+----
+include::../code/ch08/board-game-buddy-1/src/main/java/com/example/boardgamebuddy/AskController.java[tag=textToSpeechBytes]
+----
+
+The key thing that separates `audioAskAudioResponse()` from `audioAsk()` is that after receiving an `Answer` from the `BoardGameService`, it passes the text from the `Answer` to `textToSpeech()`.
+It then returns the `Resource` to the client.
+As a result, the client will receive bytes that make up an audio file.
+
+Notice that the `path` given in `@PostMapping` is the same as before: `/audioAsk`.
+But the `produces` attribute is set to "audio/mpeg" which ensures that this is the handler method called when the incoming request has an `Accept` header of "audio/mpeg".
+
+As with transcription, writing a client application that plays the audio to the user is well outside the scope of this book.
+But you can still try it out using HTTPie by specifying the `Accept` header and redirecting the output to an MP3 file like this:
+
+----
+$ http -f POST :8080/audioAsk \
+  audio@'test-audio/what_is_graveyard.mp3;type=audio/mp3' \
+  gameTitle="Burger Battle" accept:audio/mpeg  > answer.mp3
+----
+
+After submitting the request through HTTPie, you won't see the response in your terminal.
+But you should find a file named "answer.mp3" in the current directory.
+Open that file in your favorite audio file player and you should hear the answer to the question "What is the Graveyard?"
+
+==== Setting text-to-speech options
+
+Although working with the ``SpeechModel``'s `call()` method is very straightforward, you could have written it a little differently:
+
+----
+public Resource textToSpeech(String text) {
+  SpeechPrompt speechPrompt = new SpeechPrompt(text);
+  SpeechResponse response = speechModel.call(speechPrompt);
+  byte[] speechBytes = response.getResult().getOutput();
+  return new ByteArrayResource(speechBytes);
+}
+----
+
+Here, instead of simply passing a `String` to `call()`, you first create a `SpeechPrompt` and pass that to `call()`.
+And instead of getting back an array of `byte`, you get back a `SpeechResponse` and have to extract the bytes from the response.
+
+Although the code is different, it is effectively doing the same thing.
+But why would you choose to do this?
+After all, it's noticeably more complicated than the original implementation.
+
+Even so, it affords you the opportunity to specify a few options for how the audio file is created, including:
+
+- The voice used in the audio
+- The model used to create the audio
+- The response format
+
+To specify any of these options, you would create the `SpeechPrompt` with the text to be spoken along with an options object.
+The options object, which is in fact an `OpenAiAudioSpeechOptions`, can be created using a builder, from which you can set one or more of the options.
+
+For example, suppose that you want to use a different voice.
+By default, Spring AI chooses a voice named "Alloy" for you.
+But there are currently a half-dozen voices to choose from:
+
+- Alloy : mid-range
+- Echo : low-range
+- Fable : mid-range, with a British accent
+- Nova : lowest-range
+- Onyx : high-range
+- Shimmer : mid-range
+
+Let's say that you want the resulting audio to apply the Nova voice instead of Alloy.
+By creating an `OpenAiAudioSpeechOptions` object and calling `withVoice()`, you can do that like this:
+
+----
+public Resource textToSpeech(String text) {
+  OpenAiAudioSpeechOptions options = OpenAiAudioSpeechOptions.builder()
+      .withVoice(OpenAiAudioApi.SpeechRequest.Voice.NOVA)
+      .build();
+  SpeechPrompt speechPrompt = new SpeechPrompt(text, options);
+  byte[] speechBytes = speechModel.call(text);
+  return new ByteArrayResource(speechBytes);
+}
+----
+
+Similarly, you might want to change the model used to generate audio.
+Open AI supports two models, "tts-1" and "tts-1-hd".
+While the "tts-1" model is sufficient for most use cases, the "tts-1-hd" model tends to provide a bit more variance in how the audio is produced.
+Spring AI defaults to sending text-to-speech prompts with the "tts-1" model.
+But you can specify the "tts-1-hd" model like this:
+
+----
+public Resource textToSpeech(String text) {
+  OpenAiAudioSpeechOptions options = OpenAiAudioSpeechOptions.builder()
+      .withVoice(OpenAiAudioApi.SpeechRequest.Voice.NOVA)
+      .withModel("tts-1-hd")
+      .build();
+  SpeechPrompt speechPrompt = new SpeechPrompt(text, options);
+  byte[] speechBytes = speechModel.call(text);
+  return new ByteArrayResource(speechBytes);
+}
+----
+
+Finally, the audio format produced is MP3 by default, but you can specify a different format by calling `withResponseFormat()` when creating the options object:
+
+----
+public Resource textToSpeech(String text) {
+  OpenAiAudioSpeechOptions options = OpenAiAudioSpeechOptions.builder()
+      .withVoice(OpenAiAudioApi.SpeechRequest.Voice.NOVA)
+      .withModel("tts-1-hd")
+      .withResponseFormat(
+[CA]OpenAiAudioApi.SpeechRequest.AudioResponseFormat.AAC)
+      .build();
+  SpeechPrompt speechPrompt = new SpeechPrompt(text, options);
+  byte[] speechBytes = speechModel.call(text);
+  return new ByteArrayResource(speechBytes);
+}
+----
+
+Here, the AAC format is chosen.
+But you can pick from any of the audio formats supported by OpenAI, including:
+
+- AAC
+- FLAC
+- MP3
+- Opus
+- PCM
+- WAV
+
+
+Now that you've seen how to add voice capabilities to an application using Spring AI, let's switch from sound to sight and see how to work with images, both as input and output in generative AI.
+
+== Asking questions about images
+
+In chapter 4, you saw how Retrieval Augmented Generation (RAG) can be applied to add the text from one or more documents in a prompt.
+This enabled your application to effectively chat with your documents.
+But textual context isn't the only form of information that an AI-enabled application can converse with.
+
+Several models also enable you to inject an image into a prompt as context and ask questions about what the LLM "sees" in the image.
+Among the APIs and models that support vision include:
+
+* OpenAI : GPT-4 with Vision, GPT-4o, and GPT-4o-mini
+* Ollama : Llava, Bakllava, and Moondream
+* Anthropic : All Claude models
+* Google Vertex : All Gemini models
+
+To see how Spring AI supports such vision interactions, let's add an endpoint in the Board Game Buddy API that accepts an image, along with a game title and question.
+One way that this could be used is that a user could upload a photo of an in-progress game and ask questions about it.
+For example, in the game Burger Battle, the user might snap a picture of the cards they have played and ask if their burger is safe from battle cards or what ingredients they need to win the game.
+
+Enabling vision in Board Game Buddy starts by overloading the `askQuestion()` method in the `BoardGameService` interface to accept an image:
+
+----
+include::../code/ch08/board-game-buddy-2/src/main/java/com/example/boardgamebuddy/BoardGameService.java[]
+----
+
+Here, the new version of `askQuestion()` accepts a `Resource` which is the image that was submitted.
+It also takes a `String` which is the textual representation of the image's mime type.
+Listing <<ex_SpringAiBoardGameService_withVision>> shows the implementation of this new `askQuestion()` method in `SpringAiBoardGameService`.
+
+[#ex_SpringAiBoardGameService_withVision, reftext={chapter}.{counter:listing}, caption='{listing-caption}.{counter:listing-number} ']
+.Adding an image to the user message as media.
+----
+include::../code/ch08/board-game-buddy-2/src/main/java/com/example/boardgamebuddy/SpringAiBoardGameService.java[tag=askQuestionWithImage,indent=0]
+----
+<1> Accept the image and type
+<2> Parse MimeType
+<3> Add image to user message
+
+This version of `askQuestion()` is much like the other version we've been working with throughout the book, but it does have a few lines of code dedicated to sending the image in the prompt.
+Before the prompt is sent, the `imageContentType` parameter is used to create a `MimeType` object, which will be needed when adding the image to the prompt.
+
+Next, notice that the submitted question isn't simply passed into the `user()` method when creating the prompt.
+Instead, `user()` is given a lambda in which it sets the question as text on the user message specification by calling the `text()` method.
+Then, the image resource and the `MimeType` are passed into the `media()` method on the user message specification.
+This is how the image is added to the prompt.
+
+The rest of this `askQuestion()` is the same as the other `askQuestion()`.
+And because the `ChatClient` is already outfitted with advisors for RAG and converations, the question about the image will also consider the game's rules and chat history in addition to the image itself.
+
+Now you'll need to make use of the new `askQuestion()` method in `AskController` by creating a new handler method, as shown in listing <<ex_AskController_visionAsk>>.
+
+[#ex_AskController_visionAsk, reftext={chapter}.{counter:listing}, caption='{listing-caption}.{counter:listing-number} ']
+.A new controller handler method to answer questions based on a given image.
+----
+include::../code/ch08/board-game-buddy-2/src/main/java/com/example/boardgamebuddy/AskController.java[tag=visionAsk,indent=0]
+----
+<1> Receive multipart file
+<2> Extract image resource
+<3> Extract image type
+<4> Call service with image
+
+In some ways, this new `visionAsk()` method is quite similar to the `audioAsk()` method created in <<ex_transcribingSpeech>> in that it accepts a file upload in a multipart request.
+But rather than receiving an audio file, it receives an image via the "image" parameter (in addition to the game title and question).
+The first thing it does with the `image` parameter is extract a `Resource` for the image by calling the `getResource()` method.
+It also calls `getContentType()` to get the textual content type that the `askQuestion()` method needs.
+
+After constructing a `Question` object from the game title and question parameters, it calls the new `askQuestion()` method on the injected `BoardGameService`, passing in the image `Resource` and content type so that the image can provide context when answering the question.
+
+There is one final change needed to make all of this work.
+By default, the maximum file size supported by Spring in a multipart request is 1 megabyte.
+But photos are often a bit larger than that.
+So, you'll need to set the `spring.servlet.multipart.max-file-size` property in application.properties to allow for bigger file uploads:
+
+----
+include::../code/ch08/board-game-buddy-2/src/main/resources/application.properties[tag=multipartMaxFileSize]
+----
+
+Here, the maximum file size is set to 10 megabytes, which is probably fine for most photos.
+But if you find your photos are larger, then adjust it accordingly.
+
+Now, let's try it out by firing up the application, submitting a photo, and asking a question or two about it.
+
+For example, suppose that you are playing Burger Battle and have taken a picture of your in-progress burger like the one shown in figure <<fig_testImage>>.
+
+[#fig_testImage, reftext={chapter}.{counter:figure}, caption='{figure-caption}.{counter:figure-number} ']
+.A test image of an in-progress burger in the game Burger Battle.
+image::../images/ch08/BurgerBattle-3.png[]
+
+Using HTTPie, you can submit the photo similar to how you submitted audio earlier in this chapter.
+Here's what the command-line use of HTTPie and response might look like if asking about what ingredients are needed to complete the burger whose card is shown in the image:
+
+----
+$ http -f POST :8080/visionAsk \
+   gameTitle="Burger Battle" \
+   question="What ingredients are still needed to complete this burger?" \
+   image@'test-images/BurgerBattle-3.jpg' -b
+{
+   "answer": "You still need to add lettuce and teriyaki to complete The
+              Island burger.",
+   "game": "Burger Battle"
+}
+----
+
+A quick examination of the photo confirms that the response is indeed correct.
+The "Island Burger" requires 8 ingredients, but only 6 have been played so far.
+That leaves lettuce and teriyaki as the 2 missing ingredients.
+
+.Ready-made test image files.
+[NOTE]
+====
+Recognizing that you may not own a copy of Burger Battle to test with, I've included a handful of test images of the game in the `test-images` directory of the Board Game Buddy project for this chapter.
+Try submitting different images and asking any questions you want about those images.
+
+Alternatively, you can take photos of some other game, making sure that the rules are loaded into the vector store, and asking questions about that game.
+====
+
+Try it one more time, this time asking if the burger is safe from being blown up if an opponent plays the Burger Bomb card:
+
+----
+$ http -f POST :8080/visionAsk \
+   gameTitle="Burger Battle" \
+   question="Can a Burger Bomb be played on this burger?" \
+   image@'test-images/BurgerBattle-3.jpg' -b
+{
+   "answer": "No, a Burger Bomb cannot be played on this burger because it
+              is protected by the Burger Force Field.",
+   "game": "Burger Battle"
+}
+----
+
+The answer indicates that the LLM noticed from the image that the Burger Force Field card is in effect and therefore, the burger is safe from explosive destruction.
+
+Feel free to try other questions and with different images to see how well it responds.
+But for now, let's see how Spring AI can be used to create images in addition to seeing them.
+
+== Generating images
+
+One of the first experiences that many people have had with generative AI is using one of the image generation tools such as Midjourney.
+Even as generative AI's capabilities and reach expand into more aspects of everyday life, submitting text to a model and getting back a uniquely generated piece of artwork is still one of the most fun things you can do with AI.
+
+With Spring AI, it's possible to add image generation to your applications.
+Spring AI provides `ImageModel`, an interface implemented for OpenAI, Azure OpenAI, Stability, ZhiPuAI, and QianFan APIs to generate images based on a provided prompt.
+
+We've been working with OpenAI throughout this book, so if you want to use OpenAI for image generation, then you won't need to add any addition dependencies in your build.
+But if you want to use one of the other models for image generation, then you'll need to add one of the following starter dependencies to the project build:
+
+----
+implementation
+    'org.springframework.ai:spring-ai-azure-openai-spring-boot-starter'
+// ...or...
+implementation 'org.springframework.ai:spring-ai-qianfan-ai-spring-
+[CA]boot-starter'
+// ...or...
+implementation
+    'org.springframework.ai:spring-ai-stability-ai-spring-boot-starter'
+// ...or...
+implementation 'org.springframework.ai:spring-ai-zhipuai-ai-spring-
+[CA]boot-starter'
+----
+
+Then, to make sure that there's no collision in `ImageModel` auto-configuration, you'll need to disable auto-configuration for the OpenAI `ImageModel`:
+
+----
+spring.ai.openai.image.enabled=false
+----
+
+This will allow one of the other `ImageModel` implementations to be auto-wired and keep OpenAI auto-configuration for `ChatModel` and `ChatClient.Builder` enabled.
+Effectively, you'll be able to continue using OpenAI for everything you've used it for so far in this book, but use one of the other models for image generation.
+
+With the starter dependency for the API provider in your project's build, auto-configuration will do its magic and add an `ImageModel` to the Spring application context for you.
+All you need to do is inject it into your application code and make use of it.
+
+To see how this works, let's start by defining a service that submits image prompts for generation:
+
+----
+include::../code/ch08/board-game-buddy-2/src/main/java/com/example/boardgamebuddy/ImageService.java[]
+----
+
+As you can see, `ImageService` defines two methods.
+Both take a `String` containing instructions for creating the image as a parameter.
+The first method is expected to return a `String` with the URL for the generated image.
+Opening this link in a browser will display the image.
+The second returns a byte array which is the bytes for the image itself.
+This byte array could be saved directly to disk as an image (PNG) file and viewed using any application that can load PNG files.
+
+Generating images sounds like a complicated task.
+But since most of the work is done by the underlying model, it's as easy as sending a request to the provider API.
+Making it even easier, Spring AI abstracts way the specifics of how the request is sent.
+Listing <<ex_SpringAiImageService>> shows how this is done in the implementation of the `ImageService` interface.
+
+[#ex_SpringAiImageService, reftext={chapter}.{counter:listing}, caption='{listing-caption}.{counter:listing-number} ']
+.ImageService implementation based on Spring AI's ImageModel.
+----
+include::../code/ch08/board-game-buddy-2/src/main/java/com/example/boardgamebuddy/SpringAiImageService.java[]
+----
+<1> Get image URL
+<2> Get image as Base64
+<3> Decode into image bytes
+<4> Build image options
+<5> Create image prompt
+<6> Submit prompt for generation
+
+The bulk of the work in `SpringAiImageService` is performed in the private `generateImage()` method.
+After logging the instructions that were sent in, it creates an `ImageOptions` object on which you can specify options for how the image is produced.
+At very minimum, you must specify the image width and height.
+In this example the width and height are both set to produce a 1024x1024 image.
+
+Alternatively, you could choose to set the image width and height as Spring configuration properties like this:
+
+----
+spring.ai.openai.image.options.height=1024
+spring.ai.openai.image.options.width=1024
+----
+
+In addition to the image size, the response format is also set from the `format` parameter of the `generateImage()` method.
+The supported formats for OpenAI are either "url" or "b64_json".
+When the response format is set to "url" the image is generated and a URL is returned, through which the image can be retrieved.
+Alternatively, when the response format is "b64_json", the generated image is returned as a Base64-encoded string.
+
+The response formation chosen is the reason that there are two public methods exposed in `ImageService`.
+Both `generateImageForUrl()` and `generateImageForImageBytes()` call on the `generateImage()` to send the image prompt to OpenAI.
+But they each differ in the format that they produce.
+
+The `generateImageForUrl()` method sends "url" as the format to `generateImage()`.
+After receiving the result, it extracts the URL from the result's output and returns it to the caller.
+The caller can then turn around and make an HTTP GET request to that URL for up to one hour to receive the image.
+
+Meanwhile, the `generateImageForImageBytes()` passes in "b64_json" for the format.
+As a consequence, it will receive the image itself as a Base64-encoded string.
+Upon receiving the result, it uses the `Base64` class from the JDK to decode the string into an array of bytes, which are the bytes for the image itself.
+The caller can then save those bytes to a file or, as you'll see momentarily, simply return them from a controller's handler method for the client to save to a file.
+
+Let's put the image service to work by creating a new controller in the Board Game Buddy application that calls on an injected `ImageService` to create images.
+
+For fun, and to keep this example focused on a specific use-case, let's create a controller that creates an artistic rendering of a burger when given the name of one of the burgers in the game Burger Battle.
+`BurgerBattleArtController` in listing <<ex_BurgerBattleArtController>> shows how this can be done.
+
+[#ex_BurgerBattleArtController, reftext={chapter}.{counter:listing}, caption='{listing-caption}.{counter:listing-number} ']
+.A controller that creates images of burgers from the game Burger Battle.
+----
+include::../code/ch08/board-game-buddy-2/src/main/java/com/example/boardgamebuddy/BurgerBattleArtController.java[]
+----
+<1> Inject the ImageService
+<2> Generate an image URL
+<3> Generate image bytes
+<4> Ask for ingredients
+<5> Create image instructions
+
+Just as there were two different methods in `ImageService`--one for generating an image and returning a URL and one for generating an image and returning the image bytes--there are two similarly purposed methods in `BurgerBattleArtController`.
+Both handler methods handle HTTP GET requests for `/burgerBattleArt` and both accept a request parameter named "burger" which is the name of the burger to generate an image for.
+Where they differ, however, is that the `burgerBattleArtImage()` method is annotated with `@GetMapping` with a `produces` attribute that indicates that this method will only handle requests when the `Accept` header is "image/png".
+It calls the `generateImageForImageBytes()` method on the `ImageService` to do the real work of generating the image.
+On the other hand, if the request's `Accept` header is not "image/png", then the `burgerBattleArt()` method will get the job and uses `generateImageForUrl()` to create the image and get a URL.
+
+In both cases, they rely on the private `getImageInstructions()` method to create the instructions for producing the image.
+This method takes advantage of the `askQuestion()` method from `BoardGameService` that you have developed throughout the book to ask about the ingredients for the specified burger.
+Since the instructions for Burger Battle include the burgers and their ingredients, it should have no trouble finding an answer to that question.
+
+(Notice that a hard-coded conversation ID of "art_conversation" is sent, since conversation isn't really important in this controller.)
+
+The `getImageInstructions()` method wraps up by creating and returning the instructions for generating the image.
+The instructions tell the model to create an image for the burger with the given ingredients and also to style the background appropriately for the burger's name.
+
+Now it's time to fire up the application and create some tasty burger art.
+Once the application is running, try asking it to create an image for the burger called "The Cowboy" by sending this request with HTTPie:
+
+----
+$ http :8080/burgerBattleArt?burger=Cowboy
+----
+
+After a few moments (images take a little longer to generate than simple question and answer), you should receive a URL to the image.
+You'll have up to one hour to request that image, so open it up as soon as you can in your web browser.
+Every rendering of a burger image will be different, but you might see something like what's shown in figure <<fig_CowboyBurger>>.
+
+[#fig_CowboyBurger, reftext={chapter}.{counter:figure}, caption='{figure-caption}.{counter:figure-number} ']
+.An image generated for the Cowboy burger.
+image::../images/ch08/Cowboy.png[width=400]
+
+To avoid the two-step process of receiving and then opening a URL (not to mention the possibility of the URL expiring), you can try to fetch the image itself by setting the `Accept` header to "image/png".
+For example, try using HTTPie like this to get an image of the Sunrise burger:
+
+----
+$ http :8080/burgerBattleArt?burger=Sunrise \
+  accept:image/png > sunrise.png
+----
+
+In this HTTPie incantation, the bytes returned from the request are redirected to a file named "sunrise.png".
+Open that image in your favorite image viewer and you might see something similar to what's shown in figure <<fig_SunriseBurger>>.
+
+[#fig_SunriseBurger, reftext={chapter}.{counter:figure}, caption='{figure-caption}.{counter:figure-number} ']
+.An image generated for the Sunrise burger.
+image::../images/ch08/Sunrise.png[width=400]
+
+As you can see, `ImageModel` does quite an impressive job of generating images from some descriptive text.
+But there are several options that you can specify that can refine how it produces those images.
+You've already seen how to set the image width, height, and response format.
+Let's take a look at a few other image generation options that you may find useful.
+
+=== Specifying image options
+
+In listing <<ex_SpringAiImageService>>, you saw how to use `ImageOptionsBuilder` to specify the width, height, and response format of the generated image.
+`ImageOptionsBuilder` offers a handful of other "wither" methods (methods that begin with `with` to specify a value) to set other options, including those in table <<table_ImageOptionsBuilder>>.
+
+[#table_ImageOptionsBuilder, reftext={chapter}.{counter:table}, caption='{table-caption}.{counter:table-number} ']
+.ImageOptionsBuilder methods for setting image options.
+|===
+|Method |Description
+
+|`withHeight(Integer)`
+|The height of the image.
+
+|`withModel(String)`
+|The name of the model to use. Either "dall-e-2" or "dall-e-3". Default: "dall-e-3".
+
+|`withN(Integer)`
+|The number of images to generate.
+
+|`withResponseFormat(String)`
+|The format of the returned image. Either "url" or "b64_json". Default: "url".
+
+|`withStyle(String)`
+|The image style. Either "vivid" or "natural".
+
+|`withWidth(Integer)`
+|The width of the image.
+|===
+
+Among these properties, one of the most interesting one is the `withStyle()` method.
+This establishes whether you want a vivid (hyper-realistic) image or a natural (photo-realistic) image.
+The default is "vivid", but if you prefer a more photo-realistic image, you can set it like this:
+
+----
+ImageOptions options = ImageOptionsBuilder.builder()
+    .withWidth(1024)
+    .withHeight(1024)
+    .withResponseFormat(format)
+    .withStyle("natural")
+    .build();
+----
+
+By applying the "natural" style, the resulting image looks less like a piece of art and more like a photograph.
+Figure <<fig_CowboyBurgerNatural>> shows what the Cowboy burger might look like when the natural style is applied.
+
+[#fig_CowboyBurgerNatural, reftext={chapter}.{counter:figure}, caption='{figure-caption}.{counter:figure-number} ']
+.A natural, photo-realistic rendering of the Cowboy burger.
+image::../images/ch08/Cowboy_Natural.png[width=400]
+
+An alternative to building the `ImageOptions` object via `ImageOptionsBuilder` is to use ``OpenAiImageOptions``'s `builder()` method.
+The builder you get from this `builder()` method let's you set the same options as with `ImageOptionsBuilder`, but also a few more that are specific to OpenAI.
+Table <<table_OpenAiImageOptions>> lists the additional methods provided by `OpenAiImageOptions`.
+
+[#table_OpenAiImageOptions, reftext={chapter}.{counter:table}, caption='{table-caption}.{counter:table-number} ']
+.Additional methods for setting image options with OpenAiImageOptions.
+|===
+|Method |Description
+
+|`withQuality(String)`
+|The quality of the image. Either "standard" or "hd". Default: "standard".
+
+|`withUser(String)`
+|A string identifying the user making the request. Used by OpenAI for monitoring and abuse detection.
+
+|===
+
+As an example of using `OpenAiImageOptions` to set the options for generating an image, consider this snippet of code that not only uses the natural style, but also chooses "hd" quality to get a photorealistic image with finer details:
+
+----
+ImageOptions options = OpenAiImageOptions.builder()
+    .withHeight(1024)
+    .withWidth(1024)
+    .withResponseFormat(format)
+    .withStyle("natural")
+    .withQuality("hd")
+    .build();
+----
+
+When the quality is "hd", you might get a noticeably nicer and more detailed image, such as the one in figure <<fig_CowboyBurgerNaturalHD>>.
+
+[#fig_CowboyBurgerNaturalHD, reftext={chapter}.{counter:figure}, caption='{figure-caption}.{counter:figure-number} ']
+.A high-definition, photo-realistic rendering of the Cowboy burger.
+image::../images/ch08/Cowboy_Natural_HD.png[width=400]
+
+It's worth noting that these same options can be specified as configuration properties.
+The following list of configuration properties are equivalent to their similarly named wither methods on `ImageOptionsBuilder` and `OpenAiImageOptions`:
+
+- `spring.ai.openai.image.options.model`
+- `spring.ai.openai.image.options.n`
+- `spring.ai.openai.image.options.quality`
+- `spring.ai.openai.image.options.response-format`
+- `spring.ai.openai.image.options.size`
+- `spring.ai.openai.image.options.style`
+- `spring.ai.openai.image.options.user`
+- `spring.ai.openai.image.options.height`
+- `spring.ai.openai.image.options.width`
+
+By setting image options in configuration properties, the values become the new defaults, making it unnecessary to specify them in Java.
+For instance, all of the options shown thus far to generate a high-definition, photorealistic image that is 1024x1024 in dimension you can set the following in `application.properties`:
+
+----
+spring.ai.openai.image.options.height=1024
+spring.ai.openai.image.options.width=1024
+spring.ai.openai.image.options.style=natural
+spring.ai.openai.image.options.quality=hd
+----
+
+With these properties set, you'd only need to specify them via the builder if you wanted to use a different value.
+
+==== Azure Open AI image options
+
+If you have chosen to use Azure's OpenAI offering, then you can use `AzureOpenAiImageOptions` instead of `OpenAiImageOptions`.
+`AzureOpenAiImageOptions` offers the same selection of image options as `OpenAiImageOptions`, with the addition of a `withDeploymentName()` method.
+This method specifies the deployment name used when connecting to the Azure OpenAI service.
+
+For example, suppose that you have a deployment name of "MyDeployment".
+In that case, you can create an image options object like this:
+
+----
+ImageOptions options = AzureOpenAiImageOptions.builder()
+    .withDeploymentName("MyDeployment")
+    .withHeight(1024)
+    .withWidth(1024)
+    .withResponseFormat(format)
+    .withStyle("natural")
+    .withQuality("hd")
+    .build();
+----
+
+As with OpenAI, you can also set these options in `application.properties` as configuration properties:
+
+----
+spring.ai.azure.openai.image.options.deployment-name="My Deployment"
+spring.ai.azure.openai.image.options.height=1024
+spring.ai.azure.openai.image.options.width=1024
+spring.ai.azure.openai.image.options.style=natural
+spring.ai.azure.openai.image.options.quality=hd
+----
+
+You'll notice that the key difference between the OpenAI configuration properties and those for Azure OpenAI is the addition of `azure` in the middle of the property name.
+
+== Summary
+
+* Spring AI enables integration with models that support audio and images.
+* When working with OpenAI or Azure OpenAI, the transcription model makes it possible for your application to "listen" to audio files and produce textual transcriptions of those files.
+* Also with OpenAI, you can generate audio files from text with Spring AI's `SpeechModel`.
+* You can add vision to your application (for underlying models that support it) by simply adding an image `Resource` to the prompt and asking questions about the image.
+* Spring AI can also be used to generate images from text for models that support image generation.

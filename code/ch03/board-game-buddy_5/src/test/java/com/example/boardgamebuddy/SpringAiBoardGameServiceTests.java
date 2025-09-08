@@ -1,0 +1,53 @@
+package com.example.boardgamebuddy;
+
+import org.assertj.core.api.Assertions;
+import org.junit.jupiter.api.Test;
+import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.evaluation.EvaluationRequest;
+import org.springframework.ai.evaluation.EvaluationResponse;
+import org.springframework.ai.evaluation.RelevancyEvaluator;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import reactor.test.StepVerifier;
+
+import java.util.List;
+
+@SpringBootTest
+public class SpringAiBoardGameServiceTests {
+
+  @Autowired
+  private BoardGameService boardGameService;
+
+  @Autowired
+  private ChatClient.Builder chatClientBuilder;
+
+  @Test
+  public void evaluateRelevancy() {
+    String userText = "How many pieces are there?";
+    String game = "Checkers";
+    Question question = new Question(game, userText);
+    Flux<String> answerFlux = boardGameService.askQuestion(question);
+    RelevancyEvaluator relevancyEvaluator = new RelevancyEvaluator(chatClientBuilder);
+    Mono<String> answerMono = answerFlux.reduce(String::concat);
+
+    StepVerifier
+        .create(answerMono)
+        .assertNext(answer -> {
+          EvaluationResponse response = relevancyEvaluator.evaluate(new EvaluationRequest(userText, List.of(), answer));
+          Assertions.assertThat(response.isPass())
+              .withFailMessage("""
+                ========================================
+                The answer "%s"
+                is not considered relevant to the question
+                "%s".
+                ========================================
+                """, answer, userText)
+              .isTrue();
+        })
+        .expectComplete()
+        .verify();
+  }
+
+}

@@ -1,0 +1,23 @@
+# tag::mcpConfig[]
+# tag::claudeConfig[]
+spring:
+# end::claudeConfig[]
+# end::mcpConfig[]
+  application:
+    name: mcp-filesystem-client
+
+# tag::mcpConfig[]
+# tag::claudeConfig[]
+  ai:
+    mcp:
+      client:
+        stdio:
+# end::claudeConfig[]
+          connections:
+            filesystem:  # <1>
+              command: 'npx' # <2>
+              args: # <3>
+                - '-y'
+                - '@modelcontextprotocol/server-filesystem'
+                - '/Users/habuma/mcp-playground'
+# end::mcpConfig[]
